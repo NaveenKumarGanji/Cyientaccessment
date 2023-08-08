@@ -1,0 +1,400 @@
+Please implement a hash table data storage. The data should be stored using string keys and
+needs to store string values. Libraries or platform support for hash tables (or similar structures)
+cannot be used.
+Please ensure that your implementation addresses the following points. Please provide code
+comments, and also be able to demonstrate and explain these points as well:
+- O(1) run time for value look up
+- Suitability of the chosen hash function
+- Resizing of the hash table when adding/removing key-value pairs to/from the hash table
+
+
+Program:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Define the maximum size of the hash table
+#define TABLE_SIZE 100
+
+// Define a structure for key-value pairs
+struct KeyValuePair {
+    char key[50];
+    char value[100];
+};
+
+// Hash function - a simple example hash function
+unsigned int hash(const char *key) {
+    unsigned int hashValue = 0;
+    for (int i = 0; i < strlen(key); i++) {
+        hashValue += key[i];
+    }
+    return hashValue % TABLE_SIZE;
+}
+
+// Initialize the hash table
+struct KeyValuePair *hashTable[TABLE_SIZE];
+
+void initializeHashTable() {
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        hashTable[i] = NULL;
+    }
+}
+
+// Insert a key-value pair into the hash table
+void insert(const char *key, const char *value) {
+    unsigned int index = hash(key);
+
+    struct KeyValuePair *newPair = (struct KeyValuePair *)malloc(sizeof(struct KeyValuePair));
+    strcpy(newPair->key, key);
+    strcpy(newPair->value, value);
+
+    hashTable[index] = newPair;
+}
+
+// Look up a value based on a key
+const char *lookup(const char *key) {
+    unsigned int index = hash(key);
+
+    if (hashTable[index] != NULL && strcmp(hashTable[index]->key, key) == 0) {
+        return hashTable[index]->value;
+    }
+
+    return NULL;
+}
+
+int main() {
+    initializeHashTable();
+
+    insert("name", "naveen");
+    insert("age", "25");
+    insert("city", "Hyderabad");
+
+    const char *name = lookup("name");
+    const char *age = lookup("age");
+    const char *city = lookup("city");
+    const char *notFound = lookup("not_found");
+
+    printf("Name: %s\n", name);
+    printf("Age: %s\n", age);
+    printf("City: %s\n", city);
+    printf("Not Found: %s\n", notFound);
+
+    return 0;
+}
+
+
+
+
+2.
+Please implement a shared queue that is intended to be accessed by multiple readers and a single
+writer. The queue receives and releases string objects. Provide a test program that showcases the
+use of the queue; the sample program shall create 5 threads that consume the strings from the
+queue, and a single writer that adds the strings to the queue. The writer should add 5 messages a
+second, and the messages should be distributed relatively evenly between the consumers.
+Note: consumers or the queue functionality that facilitates the message consumption should not
+use Thread.sleep(), SLEEP(3) or similar calls, and the message consumption process should
+not spin on the CPU.
+Libraries or platform support for queues (or similar structures) should not be used.
+Please ensure that your implementation addresses the following points. Please provide code
+comments, and also be able to demonstrate and explain these points as well:
+1- How is synchronization between the readers and the writer implemented
+2- Whether multiple readers can wait for the next message without blocking each other
+access
+3- If synchronization is used, how the time spent in a locked condition is minimized
+
+
+
+program
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+#include <unistd.h>
+
+#define QUEUE_SIZE 100
+#define NUM_CONSUMERS 5
+
+// Define a shared queue structure
+struct SharedQueue {
+    char *items[QUEUE_SIZE];
+    int front;
+    int rear;
+    int itemCount;
+    pthread_mutex_t mutex;
+    pthread_cond_t condNotEmpty;
+};
+
+struct SharedQueue queue;
+
+// Initialize the shared queue
+void initSharedQueue() {
+    queue.front = 0;
+    queue.rear = -1;
+    queue.itemCount = 0;
+    pthread_mutex_init(&queue.mutex, NULL);
+    pthread_cond_init(&queue.condNotEmpty, NULL);
+}
+
+// Add an item to the queue
+void enqueue(const char *item) {
+    pthread_mutex_lock(&queue.mutex);
+
+    while (queue.itemCount == QUEUE_SIZE) {
+        pthread_cond_wait(&queue.condNotEmpty, &queue.mutex);
+    }
+
+    queue.rear = (queue.rear + 1) % QUEUE_SIZE;
+    queue.items[queue.rear] = strdup(item);
+    queue.itemCount++;
+
+    pthread_cond_broadcast(&queue.condNotEmpty);
+    pthread_mutex_unlock(&queue.mutex);
+}
+
+// Remove and return an item from the queue
+char *dequeue() {
+    pthread_mutex_lock(&queue.mutex);
+
+    while (queue.itemCount == 0) {
+        pthread_cond_wait(&queue.condNotEmpty, &queue.mutex);
+    }
+
+    char *item = queue.items[queue.front];
+    queue.front = (queue.front + 1) % QUEUE_SIZE;
+    queue.itemCount--;
+
+    pthread_cond_broadcast(&queue.condNotEmpty);
+    pthread_mutex_unlock(&queue.mutex);
+
+    return item;
+}
+
+// Consumer thread function
+void *consumerThread(void *arg) {
+    int id = *(int *)arg;
+
+    while (1) {
+        char *item = dequeue();
+        printf("Consumer %d received: %s\n", id, item);
+        free(item);
+    }
+
+    return NULL;
+}
+
+// Writer thread function
+void *writerThread(void *arg) {
+    int messageCount = 0;
+    char message[50];
+
+    while (1) {
+        sprintf(message, "Message %d", messageCount);
+        enqueue(message);
+        printf("Writer added: %s\n", message);
+
+        messageCount++;
+
+        // Sleep for 200 milliseconds
+        usleep(200000);
+    }
+
+    return NULL;
+}
+
+int main() {
+    initSharedQueue();
+
+    pthread_t consumers[NUM_CONSUMERS];
+    pthread_t writer;
+
+    int consumerIDs[NUM_CONSUMERS];
+    for (int i = 0; i < NUM_CONSUMERS; i++) {
+        consumerIDs[i] = i;
+        pthread_create(&consumers[i], NULL, consumerThread, &consumerIDs[i]);
+    }
+
+    pthread_create(&writer, NULL, writerThread, NULL);
+
+    for (int i = 0; i < NUM_CONSUMERS; i++) {
+        pthread_join(consumers[i], NULL);
+    }
+
+    pthread_join(writer, NULL);
+
+    return 0;
+}
+
+
+
+
+3.
+Implement a server and a client. The server shall support responding to a single “ping” message
+with a “pong” response. The request-response data can be strings, or simple tokens. The protocol
+used can be either Layer 4 (e.g., TCP), or Layer 7 (e.g., HTTP), but must be connection oriented.
+The client, once started, must connect to the server only once, and start sending “ping” message,
+printing the fact that the message is sent, and reporting when a “pong” response is received.
+Clients shall continue sending “ping” messages each second (whether responses are received or
+not). The server must support multiple clients simultaneously.
+If the server encountered an error, it should display an error and continue working. If the client
+encounters an error, it should display an error and stop.
+The client shall take in program parameter indicating where to connect, and the server shall take
+in a program parameter specifying how to listen to incoming client connections.
+High level server frameworks shall not be used (i.e., no J2EE, Spring, Express, etc.)
+Please ensure that your implementation addresses the following points. Please provide code
+comments, and also be able to demonstrate and explain these points as well:
+1. How does the server handle multiple clients simultaneously
+2. Suitability of your choice of protocol for the task
+3. Network error handling on both the client and the server
+
+
+
+Server:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define PORT 8888
+#define MAX_CLIENTS 5
+
+void handle_client(int client_socket) {
+    char buffer[1024];
+    int bytes_received;
+
+    while (1) {
+        bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (bytes_received <= 0) {
+            perror("recv");
+            break;
+        }
+        
+        if (strcmp(buffer, "ping") == 0) {
+            printf("Server received ping from client %d\n", client_socket);
+            send(client_socket, "pong", strlen("pong"), 0);
+        }
+    }
+
+    close(client_socket);
+    printf("Client %d disconnected\n", client_socket);
+}
+
+int main() {
+    int server_socket, client_socket;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_addr_size = sizeof(client_addr);
+
+    // Create socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        perror("socket");
+        return 1;
+    }
+
+    // Bind socket to port
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        perror("bind");
+        return 1;
+    }
+
+    // Listen for incoming connections
+    if (listen(server_socket, MAX_CLIENTS) == -1) {
+        perror("listen");
+        return 1;
+    }
+
+    printf("Server listening on port %d\n", PORT);
+
+    while (1) {
+        // Accept client connection
+        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_size);
+        if (client_socket == -1) {
+            perror("accept");
+            continue;
+        }
+
+        printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+        // Create a new process to handle the client
+        if (fork() == 0) {
+            close(server_socket);
+            handle_client(client_socket);
+            return 0;
+        }
+
+        close(client_socket);
+    }
+
+    close(server_socket);
+    return 0;
+}
+
+client:
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define SERVER_IP "127.0.0.1"
+#define PORT 8888
+
+int main() {
+    int client_socket;
+    struct sockaddr_in server_addr;
+    char buffer[1024];
+
+    // Create socket
+    client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket == -1) {
+        perror("socket");
+        return 1;
+    }
+
+    // Set up server address
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    // Connect to the server
+    if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        perror("connect");
+        return 1;
+    }
+
+    printf("Connected to server at %s:%d\n", SERVER_IP, PORT);
+
+    while (1) {
+        // Send "ping" to the server
+        send(client_socket, "ping", strlen("ping"), 0);
+        printf("Sent ping to server\n");
+
+        // Receive response from server
+        memset(buffer, 0, sizeof(buffer));
+        if (recv(client_socket, buffer, sizeof(buffer), 0) <= 0) {
+            perror("recv");
+            break;
+        }
+
+        if (strcmp(buffer, "pong") == 0) {
+            printf("Received pong from server\n");
+        }
+
+        sleep(1); // Wait for 1 second before sending the next ping
+    }
+
+    close(client_socket);
+    return 0;
+}
